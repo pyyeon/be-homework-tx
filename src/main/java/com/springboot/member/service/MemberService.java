@@ -3,17 +3,23 @@ package com.springboot.member.service;
 import com.springboot.exception.BusinessLogicException;
 import com.springboot.exception.ExceptionCode;
 import com.springboot.helper.EmailSender;
+import com.springboot.member.entity.CreatedMailEvent;
+import com.springboot.member.entity.EmailListener;
 import com.springboot.member.entity.Member;
 import com.springboot.member.repository.MemberRepository;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.scheduling.annotation.Async;
+import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.io.IOException;
 import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -29,18 +35,24 @@ import java.util.concurrent.Executors;
 @Service
 public class MemberService {
     private final MemberRepository memberRepository;
-    private final EmailSender emailSender;
+    private final ApplicationEventPublisher publisher;
+//    private final EmailSender emailSender;
+//
+//    private final EmailListener emailListener;
 
-    public MemberService(MemberRepository memberRepository,
-                         EmailSender emailSender) {
+    public MemberService(MemberRepository memberRepository, ApplicationEventPublisher publisher) {
         this.memberRepository = memberRepository;
-        this.emailSender = emailSender;
+//        this.emailSender = emailSender;
+//        this.emailListener = emailListener;
+        this.publisher = publisher;
     }
 
-    public Member createMember(Member member) {
+    @Async
+    public Member createMember(Member member) throws Exception {
         verifyExistsEmail(member.getEmail());
         Member savedMember = memberRepository.save(member);
         log.info("# Saved member");
+
         /**
          * TODO
          *  - 현재 이메일 전송 중 5초 뒤에 예외가 발생합니다.
@@ -56,29 +68,32 @@ public class MemberService {
          *      - 이벤트 리스너(Event Listener)가 이메일을 보내고 실패할 경우 이미 저장된 회원 정보를 삭제할 수 있습니다.
      *      - Spring에서는 @Async 애너테이션을 이용해서 비동기 작업을 손쉽게 처리할 수 있습니다.
          */
-        ExecutorService executorService = Executors.newSingleThreadExecutor();
-        executorService.submit(() -> {
-            try {
-                emailSender.sendEmail("any email message");
-            } catch (Exception e) {
-                log.error("MailSendException happened: ", e);
-                throw new RuntimeException(e);
-            }
-        });
+        // 직접 롤백하는거 구현. 예) 레포지토리에 넣은거 취소 구현
+        //끝나고 오류 터지면 조회했을때 안 보이면 됨
+//        ExecutorService executorService = Executors.newSingleThreadExecutor();
+//        executorService.submit(() -> {
+//            try {
+//                emailSender.sendEmail("any email message");
+//                throw new IOException();
+//            } catch (Exception e) {
+//                log.error("MailSendException happened: ", e);
+//            }
+//        });
+       publisher.publishEvent(CreatedMailEvent.of(savedMember));
+
         return savedMember;
+
     }
 
     @Transactional(propagation = Propagation.REQUIRED, isolation = Isolation.SERIALIZABLE)
     public Member updateMember(Member member) {
         Member findMember = findVerifiedMember(member.getMemberId());
-
         Optional.ofNullable(member.getName())
                 .ifPresent(name -> findMember.setName(name));
         Optional.ofNullable(member.getPhone())
                 .ifPresent(phone -> findMember.setPhone(phone));
         Optional.ofNullable(member.getMemberStatus())
                 .ifPresent(memberStatus -> findMember.setMemberStatus(memberStatus));
-
         return memberRepository.save(findMember);
     }
 
