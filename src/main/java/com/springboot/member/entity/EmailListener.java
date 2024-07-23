@@ -9,6 +9,10 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.stereotype.Component;
 
+
+
+
+
 @Slf4j
 @Component
 @EnableAsync
@@ -33,6 +37,5 @@ public class EmailListener {
             memberService.deleteMember(createdMailEvent.getMember().getMemberId());
         }
     }
-
 
 }
